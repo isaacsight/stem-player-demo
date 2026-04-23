@@ -10,6 +10,7 @@ import AgentChat from './AgentChat'
 import type { AgentContext, Section } from './agent-tools'
 import { Scheduler, type AutomationEvent } from './automation'
 import { DEFAULT_FX, type StemFxState } from './audio'
+import { renderMix, audioBufferToWav } from './render'
 
 type StemUI = {
   name: string
@@ -434,6 +435,34 @@ export default function App() {
     save(state)
   }, [savedKey, stems, crushOn, bits, reduction, beats, tempo])
 
+  // ── Render mix to WAV (offline rendering) ──
+
+  const [rendering, setRendering] = useState(false)
+
+  const exportMixWav = useCallback(async () => {
+    if (stems.length === 0) return
+    setRendering(true)
+    try {
+      const stemList = stems.map(s => ({ name: s.name, buffer: s.buffer }))
+      const mix: Record<string, { volume: number; muted: boolean; solo: boolean }> = {}
+      stems.forEach(s => { mix[s.name] = { volume: s.volume, muted: s.muted, solo: s.solo } })
+      const buffer = await renderMix({
+        stems: stemList,
+        mix,
+        fx: stemFx,
+        events: scheduledEvents,
+        crusher: { on: crushOn, bits, reduction },
+      })
+      const blob = audioBufferToWav(buffer)
+      const fname = `mix-${tempo ? `${tempo.toFixed(0)}bpm-` : ''}${Date.now()}.wav`
+      downloadBlob(blob, fname)
+    } catch (err) {
+      console.error('render failed', err)
+    } finally {
+      setRendering(false)
+    }
+  }, [stems, stemFx, scheduledEvents, crushOn, bits, reduction, tempo])
+
   // ── MIDI export ──
 
   const exportMidi = useCallback(() => {
@@ -552,7 +581,10 @@ export default function App() {
           ? <button onClick={pause}>Pause</button>
           : <button onClick={play}>Play</button>}
         <button onClick={reset}>Reset</button>
-        <button onClick={exportMidi} disabled={beats.length === 0}>Export beats → MIDI</button>
+        <button onClick={exportMidi} disabled={beats.length === 0}>Beats → MIDI</button>
+        <button onClick={exportMixWav} disabled={rendering}>
+          {rendering ? 'Rendering…' : 'Render mix → WAV'}
+        </button>
         <span className="time">{position.toFixed(2)} / {duration.toFixed(2)} s</span>
       </div>
 
