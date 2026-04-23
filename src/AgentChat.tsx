@@ -84,7 +84,9 @@ export default function AgentChat({ ctxFactory }: { ctxFactory: () => AgentConte
               const last = next[next.length - 1]
               if (last?.role === 'assistant') {
                 const updatedCalls = last.toolCalls.map(t =>
-                  t.id === call.id ? { ...t, result: call.result, endedAt: call.endedAt } : t,
+                  t.id === call.id
+                    ? { ...t, input: call.input, result: call.result, endedAt: call.endedAt }
+                    : t,
                 )
                 next[next.length - 1] = { ...last, toolCalls: updatedCalls }
               }

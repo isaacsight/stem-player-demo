@@ -7,7 +7,8 @@ import { generateDemoStems } from './demo-stems'
 import { rmsDb, richFeatures } from './analysis'
 import { requestAutoName } from './api-client'
 import AgentChat from './AgentChat'
-import type { AgentContext } from './agent-tools'
+import type { AgentContext, Section } from './agent-tools'
+import { Scheduler, type AutomationEvent } from './automation'
 
 type StemUI = {
   name: string
@@ -36,6 +37,26 @@ export default function App() {
   const [restoredFromMemory, setRestoredFromMemory] = useState(false)
   const [aiBusy, setAiBusy] = useState<'name' | null>(null)
   const [aiError, setAiError] = useState<string>('')
+  const [agentTouched, setAgentTouched] = useState<Set<string>>(new Set())
+  const [sections, setSections] = useState<Section[]>([])
+  const [loop, setLoop] = useState<{ startSec: number; endSec: number } | null>(null)
+  const [scheduledEvents, setScheduledEvents] = useState<AutomationEvent[]>([])
+  const schedulerRef = useRef<Scheduler>(new Scheduler())
+
+  const flashStems = useCallback((names: string[]) => {
+    setAgentTouched(prev => {
+      const next = new Set(prev)
+      names.forEach(n => next.add(n))
+      return next
+    })
+    setTimeout(() => {
+      setAgentTouched(prev => {
+        const next = new Set(prev)
+        names.forEach(n => next.delete(n))
+        return next
+      })
+    }, 1200)
+  }, [])
 
   const engineRef = useRef<AudioEngine | null>(null)
   const rafRef = useRef<number>(0)
@@ -169,19 +190,72 @@ export default function App() {
 
   // ── Transport ──
 
+  /**
+   * Apply an automation event to live state. Called by the scheduler tick
+   * during playback whenever the playhead crosses an event time.
+   */
+  const applyAutomationEvent = useCallback((event: AutomationEvent) => {
+    if (event.type === 'volume' || event.type === 'mute' || event.type === 'solo') {
+      setStems(prev => {
+        const next = prev.map(s => {
+          if (s.name !== event.stem) return s
+          if (event.type === 'volume') return { ...s, volume: event.value }
+          if (event.type === 'mute') return { ...s, muted: event.value }
+          if (event.type === 'solo') return { ...s, solo: event.value }
+          return s
+        })
+        const engine = getEngine()
+        const stateMap: Record<string, { volume: number; muted: boolean; solo: boolean }> = {}
+        next.forEach(s => { stateMap[s.name] = { volume: s.volume, muted: s.muted, solo: s.solo } })
+        engine.applySoloLogic(stateMap)
+        return next
+      })
+      setAgentTouched(prev => {
+        const next = new Set(prev)
+        next.add(event.stem)
+        return next
+      })
+      setTimeout(() => setAgentTouched(prev => {
+        const next = new Set(prev)
+        next.delete(event.stem)
+        return next
+      }), 1000)
+    } else if (event.type === 'clear_solo') {
+      setStems(prev => {
+        const next = prev.map(s => ({ ...s, solo: false }))
+        const engine = getEngine()
+        const stateMap: Record<string, { volume: number; muted: boolean; solo: boolean }> = {}
+        next.forEach(s => { stateMap[s.name] = { volume: s.volume, muted: s.muted, solo: s.solo } })
+        engine.applySoloLogic(stateMap)
+        return next
+      })
+    } else if (event.type === 'set_bitcrusher') {
+      const enabled = event.enabled
+      const newBits = event.bits ?? bits
+      const newReduction = event.reduction ?? reduction
+      setCrushOn(enabled)
+      setBits(newBits)
+      setReduction(newReduction)
+      getEngine().setCrusher(enabled, newBits, newReduction)
+    }
+  }, [getEngine, bits, reduction])
+
   const play = useCallback(async () => {
     const engine = getEngine()
     setIsPlaying(true)
+    schedulerRef.current.rewindTo(engine.position())
     await engine.play(() => {
       setIsPlaying(false)
       setPosition(0)
     })
     const tick = () => {
-      setPosition(engine.position())
+      const pos = engine.position()
+      setPosition(pos)
+      schedulerRef.current.tick(pos, applyAutomationEvent)
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
-  }, [getEngine])
+  }, [getEngine, applyAutomationEvent])
 
   const pause = useCallback(() => {
     const engine = getEngine()
@@ -196,6 +270,7 @@ export default function App() {
     cancelAnimationFrame(rafRef.current)
     setPosition(0)
     setIsPlaying(false)
+    schedulerRef.current.rewindTo(0)
   }, [getEngine])
 
   // ── Stem mixer ──
@@ -275,11 +350,17 @@ export default function App() {
           rmsDb: stemRms.get(s.name) ?? 0,
         }))
         const mutated = mutator(agentView)
-        return prev.map(stemUI => {
+        const changed: string[] = []
+        const next = prev.map(stemUI => {
           const m = mutated.find(x => x.name === stemUI.name)
           if (!m) return stemUI
+          if (m.volume !== stemUI.volume || m.muted !== stemUI.muted || m.solo !== stemUI.solo) {
+            changed.push(stemUI.name)
+          }
           return { ...stemUI, volume: m.volume, muted: m.muted, solo: m.solo }
         })
+        if (changed.length) flashStems(changed)
+        return next
       }),
       tempo,
       beats,
@@ -290,8 +371,24 @@ export default function App() {
         setBits(next.bits)
         setReduction(next.reduction)
       },
+      scheduler: schedulerRef.current,
+      onScheduleChanged: (events) => setScheduledEvents(events),
+      setLoop: (range) => {
+        setLoop(range)
+        engine.setLoopRegion(range)
+      },
+      loop,
+      sections,
+      setSections,
+      rewindTransport: () => {
+        engine.rewind()
+        cancelAnimationFrame(rafRef.current)
+        setPosition(0)
+        setIsPlaying(false)
+        schedulerRef.current.rewindTo(0)
+      },
     }
-  }, [stems, stemRms, tempo, beats, duration, crushOn, bits, reduction])
+  }, [stems, stemRms, tempo, beats, duration, crushOn, bits, reduction, loop, sections])
 
   // ── AI: auto-name stems ──
 
@@ -396,6 +493,31 @@ export default function App() {
         />
       </div>
 
+      {(sections.length > 0 || scheduledEvents.length > 0 || loop) && (
+        <div className="arrangement-strip">
+          {sections.length > 0 && (
+            <div className="sections-row">
+              {sections.map((s, i) => (
+                <div
+                  key={i}
+                  className="section-marker"
+                  style={{
+                    left: `${(s.startSec / duration) * 100}%`,
+                    width: `${((s.endSec - s.startSec) / duration) * 100}%`,
+                  }}
+                >
+                  {s.name}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="arrangement-meta">
+            {scheduledEvents.length > 0 && <span>📋 {scheduledEvents.length} arrangement events</span>}
+            {loop && <span>🔁 loop {loop.startSec.toFixed(1)}s–{loop.endSec.toFixed(1)}s</span>}
+          </div>
+        </div>
+      )}
+
       <div className="mixer">
         {stems.map(stem => (
           <StemRow
@@ -404,6 +526,11 @@ export default function App() {
             duration={duration}
             position={position}
             beats={beats}
+            flashed={agentTouched.has(stem.name)}
+            stemEvents={scheduledEvents.filter(e =>
+              (e.type === 'volume' || e.type === 'mute' || e.type === 'solo') && e.stem === stem.name
+            )}
+            loop={loop}
             onMute={(m) => setStemMuted(stem.name, m)}
             onVolume={(v) => setStemVolume(stem.name, v)}
             onSolo={() => toggleSolo(stem.name)}
@@ -454,12 +581,15 @@ export default function App() {
 // ── Per-stem row with mini-waveform ──
 
 function StemRow({
-  stem, duration, position, beats, onMute, onVolume, onSolo,
+  stem, duration, position, beats, flashed, stemEvents, loop, onMute, onVolume, onSolo,
 }: {
   stem: StemUI
   duration: number
   position: number
   beats: number[]
+  flashed: boolean
+  stemEvents: AutomationEvent[]
+  loop: { startSec: number; endSec: number } | null
   onMute: (m: boolean) => void
   onVolume: (v: number) => void
   onSolo: () => void
@@ -490,7 +620,7 @@ function StemRow({
   const playheadPct = duration > 0 ? (position / duration) * 100 : 0
 
   return (
-    <div className={'stem-row' + (stem.solo ? ' solo' : '') + (stem.muted ? ' muted' : '')}>
+    <div className={'stem-row' + (stem.solo ? ' solo' : '') + (stem.muted ? ' muted' : '') + (flashed ? ' flashed' : '')}>
       <div className="stem-name">
         {stem.name}
         {stem.inferredType && (
@@ -501,12 +631,29 @@ function StemRow({
       </div>
       <div className="stem-canvas-wrap">
         <canvas ref={canvasRef} />
+        {loop && (
+          <div
+            className="loop-region"
+            style={{
+              left: `${(loop.startSec / duration) * 100}%`,
+              width: `${((loop.endSec - loop.startSec) / duration) * 100}%`,
+            }}
+          />
+        )}
         <div className="playhead" style={{ left: `${playheadPct}%` }} />
         {beats.map((t, i) => (
           <div
             key={i}
             className="beat-mark"
             style={{ left: `${(t / duration) * 100}%` }}
+          />
+        ))}
+        {stemEvents.map((e, i) => (
+          <div
+            key={`evt-${i}`}
+            className={`auto-event auto-${e.type}`}
+            style={{ left: `${(e.atSec / duration) * 100}%` }}
+            title={`${e.type} @ ${e.atSec.toFixed(2)}s${'value' in e ? ` → ${e.value}` : ''}`}
           />
         ))}
       </div>

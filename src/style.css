@@ -103,6 +103,12 @@ h1 {
 }
 .stem-row.solo { background: rgba(107, 91, 149, 0.06); }
 .stem-row.muted .stem-name { color: #444; }
+.stem-row.flashed { animation: stem-flash 1.2s ease-out; }
+@keyframes stem-flash {
+  0%   { background: rgba(107, 91, 149, 0.45); box-shadow: inset 0 0 0 1px var(--accent); }
+  60%  { background: rgba(107, 91, 149, 0.18); }
+  100% { background: transparent; box-shadow: none; }
+}
 
 .stem-name {
   font-size: 11px;
@@ -121,6 +127,56 @@ h1 {
 .beat-mark {
   position: absolute; top: 0; width: 1px; height: 100%;
   background: rgba(255, 255, 255, 0.1); pointer-events: none;
+}
+.loop-region {
+  position: absolute; top: 0; height: 100%;
+  background: rgba(107, 91, 149, 0.18);
+  border-left: 1px dashed var(--accent);
+  border-right: 1px dashed var(--accent);
+  pointer-events: none;
+}
+.auto-event {
+  position: absolute; top: 50%;
+  width: 8px; height: 8px;
+  margin-left: -4px; margin-top: -4px;
+  border-radius: 50%;
+  pointer-events: auto;
+  cursor: help;
+}
+.auto-event.auto-volume { background: #6BBE6B; }
+.auto-event.auto-mute { background: #d97a7a; }
+.auto-event.auto-solo { background: #b9a8d8; }
+
+.arrangement-strip {
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  background: rgba(107, 91, 149, 0.04);
+  border-radius: 3px;
+}
+.sections-row {
+  position: relative;
+  height: 16px;
+  margin-bottom: 4px;
+}
+.section-marker {
+  position: absolute;
+  top: 0;
+  height: 16px;
+  background: rgba(107, 91, 149, 0.18);
+  border-left: 2px solid var(--accent);
+  padding: 0 6px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-soft);
+  line-height: 16px;
+  font-weight: 600;
+}
+.arrangement-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: var(--muted);
 }
 
 .stem-controls { display: flex; align-items: center; gap: 6px; }

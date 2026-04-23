@@ -138,9 +138,25 @@ export class AudioEngine {
     this.crusher.parameters.get('reduction')!.value = reduction
   }
 
+  /** Loop region (sec). When set, sources play with loopStart/loopEnd. */
+  private loopRegion: { startSec: number; endSec: number } | null = null
+  setLoopRegion(range: { startSec: number; endSec: number } | null) {
+    this.loopRegion = range
+    // If currently playing, restart sources to honor the new loop bounds
+    if (this.playing) {
+      const onEnded = this.lastOnEnded
+      this.stop()
+      this.play(onEnded)
+    }
+  }
+  getLoopRegion() { return this.loopRegion }
+
+  private lastOnEnded?: () => void
+
   async play(onEnded?: () => void) {
     if (this.playing || this.stems.length === 0) return
     await this.workletReady // safe even if crusher unused
+    this.lastOnEnded = onEnded
     const startAt = this.ctx.currentTime + START_LOOKAHEAD
     this.startedAt = startAt
     this.playing = true
@@ -154,6 +170,7 @@ export class AudioEngine {
       onEnded?.()
     }
 
+    const loop = this.loopRegion
     // Find the matching original buffer — keep a parallel array
     for (let i = 0; i < this.stems.length; i++) {
       const runtime = this.stems[i]
@@ -162,10 +179,28 @@ export class AudioEngine {
       const src = this.ctx.createBufferSource()
       src.buffer = buffer
       src.connect(runtime.gainNode)
-      src.start(startAt, this.startOffset)
+      if (loop) {
+        src.loop = true
+        src.loopStart = loop.startSec
+        src.loopEnd = loop.endSec
+        // Start at loop.startSec if current offset is outside the region
+        const offset = (this.startOffset >= loop.startSec && this.startOffset < loop.endSec)
+          ? this.startOffset
+          : loop.startSec
+        if (offset !== this.startOffset) this.startOffset = offset
+        src.start(startAt, offset)
+      } else {
+        src.start(startAt, this.startOffset)
+      }
       src.onended = fireOnce
       runtime.source = src
     }
+  }
+
+  /** Reset transport to 0. */
+  rewind() {
+    this.stop()
+    this.startOffset = 0
   }
 
   pause() {
