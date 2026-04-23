@@ -228,6 +228,24 @@ button:disabled { background: #333; color: #666; cursor: not-allowed; }
   vertical-align: middle;
 }
 
+.stem-fx-badges {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.fx-badge {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #b9a8d8;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 2px;
+  letter-spacing: 0.04em;
+  cursor: help;
+}
+
 /* ── AI panel ── */
 
 .ai-panel {

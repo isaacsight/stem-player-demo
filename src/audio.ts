@@ -22,7 +22,26 @@ export type Stem = {
 export type StemRuntime = {
   name: string
   gainNode: GainNode
+  filter: BiquadFilterNode
+  panner: StereoPannerNode
+  reverbSend: GainNode
   source: AudioBufferSourceNode | null
+}
+
+export type StemFxState = {
+  filterType: 'off' | 'lowpass' | 'highpass' | 'bandpass'
+  filterFreq: number   // Hz
+  filterQ: number
+  pan: number          // -1 (L) … 1 (R)
+  reverbSend: number   // 0 … 1
+}
+
+export const DEFAULT_FX: StemFxState = {
+  filterType: 'off',
+  filterFreq: 1000,
+  filterQ: 1,
+  pan: 0,
+  reverbSend: 0,
 }
 
 export type EngineState = {
@@ -35,6 +54,8 @@ export type EngineState = {
 export class AudioEngine {
   private ctx: AudioContext
   private master: GainNode
+  private reverb: ConvolverNode
+  private reverbReturn: GainNode
   private crusher: AudioWorkletNode | null = null
   private workletReady: Promise<void>
   private stems: StemRuntime[] = []
@@ -47,6 +68,12 @@ export class AudioEngine {
     this.ctx = new AudioContext()
     this.master = this.ctx.createGain()
     this.master.connect(this.ctx.destination)
+    // Synthetic IR reverb on its own bus, summed back into master
+    this.reverb = this.ctx.createConvolver()
+    this.reverb.buffer = synthesizeImpulseResponse(this.ctx, 2.5, 2.0)
+    this.reverbReturn = this.ctx.createGain()
+    this.reverbReturn.gain.value = 0.6
+    this.reverb.connect(this.reverbReturn).connect(this.master)
     this.workletReady = this.ctx.audioWorklet.addModule('/bitcrusher-processor.js')
   }
 
@@ -67,17 +94,68 @@ export class AudioEngine {
     this.bufferMap.clear()
     this.stems = stems.map(s => {
       this.bufferMap.set(s.name, s.buffer)
+      // Per-stem chain: source → filter → panner → gain → master
+      //                                    └ reverbSend → reverb (shared)
+      const filter = this.ctx.createBiquadFilter()
+      filter.type = 'allpass' // off — pass-through
+      filter.frequency.value = 1000
+      filter.Q.value = 1
+      const panner = this.ctx.createStereoPanner()
+      panner.pan.value = 0
       const gain = this.ctx.createGain()
       const init = initialState?.[s.name]
       const vol = init?.volume ?? 1
       const muted = init?.muted ?? false
       gain.gain.value = muted ? 0 : vol
+      const reverbSend = this.ctx.createGain()
+      reverbSend.gain.value = 0
+      filter.connect(panner)
+      panner.connect(gain)
+      panner.connect(reverbSend)
+      reverbSend.connect(this.reverb)
       gain.connect(this.master)
-      return { name: s.name, gainNode: gain, source: null }
+      return { name: s.name, gainNode: gain, filter, panner, reverbSend, source: null }
     })
     this.duration = stems.reduce((max, s) => Math.max(max, s.buffer.duration), 0)
     this.startOffset = 0
     this.applySoloLogic(initialState)
+  }
+
+  // ── Per-stem FX ──
+
+  setStemFilter(name: string, type: StemFxState['filterType'], freq: number, q: number): boolean {
+    const stem = this.stems.find(s => s.name === name)
+    if (!stem) return false
+    if (type === 'off') {
+      stem.filter.type = 'allpass'
+    } else {
+      stem.filter.type = type
+      stem.filter.frequency.value = freq
+      stem.filter.Q.value = q
+    }
+    return true
+  }
+
+  setStemPan(name: string, pan: number): boolean {
+    const stem = this.stems.find(s => s.name === name)
+    if (!stem) return false
+    stem.panner.pan.value = Math.max(-1, Math.min(1, pan))
+    return true
+  }
+
+  setStemReverbSend(name: string, amount: number): boolean {
+    const stem = this.stems.find(s => s.name === name)
+    if (!stem) return false
+    stem.reverbSend.gain.value = Math.max(0, Math.min(1, amount))
+    return true
+  }
+
+  clearStemFx(name: string): boolean {
+    return (
+      this.setStemFilter(name, 'off', 1000, 1) &&
+      this.setStemPan(name, 0) &&
+      this.setStemReverbSend(name, 0)
+    )
   }
 
   /** Mute/unmute via gain — preserves the underlying volume. */
@@ -178,7 +256,8 @@ export class AudioEngine {
       if (!buffer) continue
       const src = this.ctx.createBufferSource()
       src.buffer = buffer
-      src.connect(runtime.gainNode)
+      // Source goes through the per-stem FX chain: filter → panner → gain
+      src.connect(runtime.filter)
       if (loop) {
         src.loop = true
         src.loopStart = loop.startSec
@@ -237,4 +316,27 @@ export class AudioEngine {
   private bufferFor(name: string): AudioBuffer | undefined {
     return this.bufferMap.get(name)
   }
+}
+
+/**
+ * Synthesize a stereo exponential-decay impulse response for a ConvolverNode.
+ * Cheap, sounds plausible — not a real recorded space, but fine for demos
+ * and dramatically lighter than shipping a real IR file.
+ */
+function synthesizeImpulseResponse(
+  ctx: BaseAudioContext,
+  durationSec: number,
+  decay: number,
+): AudioBuffer {
+  const sampleRate = ctx.sampleRate
+  const length = Math.floor(sampleRate * durationSec)
+  const ir = ctx.createBuffer(2, length, sampleRate)
+  for (let ch = 0; ch < 2; ch++) {
+    const data = ir.getChannelData(ch)
+    for (let i = 0; i < length; i++) {
+      // Decaying noise burst — Math.pow controls tail shape
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay)
+    }
+  }
+  return ir
 }

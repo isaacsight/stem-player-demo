@@ -9,6 +9,7 @@ import { requestAutoName } from './api-client'
 import AgentChat from './AgentChat'
 import type { AgentContext, Section } from './agent-tools'
 import { Scheduler, type AutomationEvent } from './automation'
+import { DEFAULT_FX, type StemFxState } from './audio'
 
 type StemUI = {
   name: string
@@ -41,6 +42,7 @@ export default function App() {
   const [sections, setSections] = useState<Section[]>([])
   const [loop, setLoop] = useState<{ startSec: number; endSec: number } | null>(null)
   const [scheduledEvents, setScheduledEvents] = useState<AutomationEvent[]>([])
+  const [stemFx, setStemFx] = useState<Record<string, StemFxState>>({})
   const schedulerRef = useRef<Scheduler>(new Scheduler())
 
   const flashStems = useCallback((names: string[]) => {
@@ -340,6 +342,7 @@ export default function App() {
         muted: s.muted,
         solo: s.solo,
         rmsDb: stemRms.get(s.name) ?? 0,
+        fx: stemFx[s.name] ?? DEFAULT_FX,
       })),
       setStems: (mutator) => setStems(prev => {
         const agentView = prev.map(s => ({
@@ -348,6 +351,7 @@ export default function App() {
           muted: s.muted,
           solo: s.solo,
           rmsDb: stemRms.get(s.name) ?? 0,
+          fx: stemFx[s.name] ?? DEFAULT_FX,
         }))
         const mutated = mutator(agentView)
         const changed: string[] = []
@@ -371,6 +375,10 @@ export default function App() {
         setBits(next.bits)
         setReduction(next.reduction)
       },
+      setStemFx: (name, mutator) => setStemFx(prev => ({
+        ...prev,
+        [name]: mutator(prev[name] ?? DEFAULT_FX),
+      })),
       scheduler: schedulerRef.current,
       onScheduleChanged: (events) => setScheduledEvents(events),
       setLoop: (range) => {
@@ -388,7 +396,7 @@ export default function App() {
         schedulerRef.current.rewindTo(0)
       },
     }
-  }, [stems, stemRms, tempo, beats, duration, crushOn, bits, reduction, loop, sections])
+  }, [stems, stemRms, tempo, beats, duration, crushOn, bits, reduction, loop, sections, stemFx])
 
   // ── AI: auto-name stems ──
 
@@ -531,6 +539,7 @@ export default function App() {
               (e.type === 'volume' || e.type === 'mute' || e.type === 'solo') && e.stem === stem.name
             )}
             loop={loop}
+            fx={stemFx[stem.name] ?? DEFAULT_FX}
             onMute={(m) => setStemMuted(stem.name, m)}
             onVolume={(v) => setStemVolume(stem.name, v)}
             onSolo={() => toggleSolo(stem.name)}
@@ -581,7 +590,7 @@ export default function App() {
 // ── Per-stem row with mini-waveform ──
 
 function StemRow({
-  stem, duration, position, beats, flashed, stemEvents, loop, onMute, onVolume, onSolo,
+  stem, duration, position, beats, flashed, stemEvents, loop, fx, onMute, onVolume, onSolo,
 }: {
   stem: StemUI
   duration: number
@@ -590,6 +599,7 @@ function StemRow({
   flashed: boolean
   stemEvents: AutomationEvent[]
   loop: { startSec: number; endSec: number } | null
+  fx: StemFxState
   onMute: (m: boolean) => void
   onVolume: (v: number) => void
   onSolo: () => void
@@ -628,6 +638,23 @@ function StemRow({
             {stem.inferredType}
           </span>
         )}
+        <span className="stem-fx-badges">
+          {fx.filterType !== 'off' && (
+            <span className="fx-badge" title={`${fx.filterType} @ ${fx.filterFreq.toFixed(0)}Hz`}>
+              {fx.filterType === 'lowpass' ? 'LP' : fx.filterType === 'highpass' ? 'HP' : 'BP'}
+            </span>
+          )}
+          {fx.pan !== 0 && (
+            <span className="fx-badge" title={`pan ${fx.pan.toFixed(2)}`}>
+              {fx.pan < 0 ? `L${Math.round(-fx.pan * 100)}` : `R${Math.round(fx.pan * 100)}`}
+            </span>
+          )}
+          {fx.reverbSend > 0 && (
+            <span className="fx-badge" title={`reverb send ${(fx.reverbSend * 100).toFixed(0)}%`}>
+              REV {Math.round(fx.reverbSend * 100)}
+            </span>
+          )}
+        </span>
       </div>
       <div className="stem-canvas-wrap">
         <canvas ref={canvasRef} />

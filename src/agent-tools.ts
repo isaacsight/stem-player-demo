@@ -9,7 +9,8 @@
  * been instructed to call them by these exact names.
  */
 
-import type { AudioEngine } from './audio'
+import type { AudioEngine, StemFxState } from './audio'
+import { DEFAULT_FX } from './audio'
 import type { AutomationEvent, Scheduler } from './automation'
 
 export type ToolDefinition = {
@@ -178,6 +179,59 @@ This is the most powerful tool — use it whenever the user asks for an arrangem
     description: 'Remove all section labels.',
     input_schema: { type: 'object', properties: {} },
   },
+  {
+    name: 'set_stem_filter',
+    description: `Apply a per-stem biquad filter. Use 'lowpass' to darken / muffle / make a stem feel underwater. Use 'highpass' to thin / clear up muddy mids. Use 'bandpass' for telephone/radio effects. 'off' bypasses.
+
+Common producer settings:
+  - Lo-fi/telephone: bandpass 1500Hz Q=4
+  - Underwater muffled: lowpass 800Hz Q=1
+  - Tighter cleaner kick: highpass 80Hz Q=0.7
+  - Distant/in another room: lowpass 2500Hz Q=0.7`,
+    input_schema: {
+      type: 'object',
+      required: ['stem', 'type'],
+      properties: {
+        stem: { type: 'string' },
+        type: { type: 'string', enum: ['off', 'lowpass', 'highpass', 'bandpass'] },
+        freq: { type: 'number', description: 'Cutoff in Hz, default 1000.' },
+        q: { type: 'number', description: 'Resonance/bandwidth, default 1.' },
+      },
+    },
+  },
+  {
+    name: 'set_stem_pan',
+    description: 'Stereo placement of a stem. -1 = hard left, 0 = center, 1 = hard right.',
+    input_schema: {
+      type: 'object',
+      required: ['stem', 'pan'],
+      properties: {
+        stem: { type: 'string' },
+        pan: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'set_stem_reverb',
+    description: 'Send a stem into the master reverb bus. 0 = dry, 0.3 = subtle space, 0.6 = wet, 1.0 = drenched. Use to push elements back in the mix or create depth.',
+    input_schema: {
+      type: 'object',
+      required: ['stem', 'amount'],
+      properties: {
+        stem: { type: 'string' },
+        amount: { type: 'number', description: '0..1' },
+      },
+    },
+  },
+  {
+    name: 'clear_stem_fx',
+    description: 'Reset filter, pan, and reverb send for a stem to defaults.',
+    input_schema: {
+      type: 'object',
+      required: ['stem'],
+      properties: { stem: { type: 'string' } },
+    },
+  },
 ]
 
 // ─── Tool execution (client-side) ───
@@ -188,8 +242,9 @@ export type Section = { name: string; startSec: number; endSec: number }
 
 export type AgentContext = {
   engine: AudioEngine
-  stems: Array<{ name: string; volume: number; muted: boolean; solo: boolean; rmsDb: number }>
+  stems: Array<{ name: string; volume: number; muted: boolean; solo: boolean; rmsDb: number; fx: StemFxState }>
   setStems: (mutator: (current: AgentContext['stems']) => AgentContext['stems']) => void
+  setStemFx: (name: string, mutator: (current: StemFxState) => StemFxState) => void
   tempo: number | null
   beats: number[]
   duration: number
@@ -221,11 +276,15 @@ export async function executeTool(
               muted: s.muted,
               solo: s.solo,
               rmsDb: Math.round(s.rmsDb * 10) / 10,
+              fx: s.fx,
             })),
             tempoBpm: ctx.tempo,
             beatCount: ctx.beats.length,
             durationSec: ctx.duration,
             bitcrusher: ctx.crusher,
+            arrangement: ctx.scheduler.getSchedule(),
+            loop: ctx.loop,
+            sections: ctx.sections,
             isPlaying: ctx.engine.isPlaying,
           },
         }
@@ -358,6 +417,47 @@ export async function executeTool(
       case 'clear_sections':
         ctx.setSections([])
         return { success: true, output: 'sections cleared' }
+
+      case 'set_stem_filter': {
+        const stem = String(input.stem)
+        const type = (input.type as 'off' | 'lowpass' | 'highpass' | 'bandpass') ?? 'off'
+        const freq = Number(input.freq ?? 1000)
+        const q = Number(input.q ?? 1)
+        if (!ctx.engine.setStemFilter(stem, type, freq, q)) {
+          return { success: false, error: `unknown stem: ${stem}` }
+        }
+        ctx.setStemFx(stem, fx => ({ ...fx, filterType: type, filterFreq: freq, filterQ: q }))
+        return { success: true, output: `${stem} filter: ${type === 'off' ? 'off' : `${type} @ ${freq}Hz (Q=${q})`}` }
+      }
+
+      case 'set_stem_pan': {
+        const stem = String(input.stem)
+        const pan = clamp(Number(input.pan), -1, 1)
+        if (!ctx.engine.setStemPan(stem, pan)) {
+          return { success: false, error: `unknown stem: ${stem}` }
+        }
+        ctx.setStemFx(stem, fx => ({ ...fx, pan }))
+        return { success: true, output: `${stem} pan: ${pan === 0 ? 'center' : pan < 0 ? `${Math.round(-pan * 100)}% L` : `${Math.round(pan * 100)}% R`}` }
+      }
+
+      case 'set_stem_reverb': {
+        const stem = String(input.stem)
+        const amount = clamp01(Number(input.amount))
+        if (!ctx.engine.setStemReverbSend(stem, amount)) {
+          return { success: false, error: `unknown stem: ${stem}` }
+        }
+        ctx.setStemFx(stem, fx => ({ ...fx, reverbSend: amount }))
+        return { success: true, output: `${stem} reverb send: ${(amount * 100).toFixed(0)}%` }
+      }
+
+      case 'clear_stem_fx': {
+        const stem = String(input.stem)
+        if (!ctx.engine.clearStemFx(stem)) {
+          return { success: false, error: `unknown stem: ${stem}` }
+        }
+        ctx.setStemFx(stem, () => ({ ...DEFAULT_FX }))
+        return { success: true, output: `${stem} FX cleared` }
+      }
 
       default:
         return { success: false, error: `unknown tool: ${name}` }
