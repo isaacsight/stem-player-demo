@@ -1,0 +1,175 @@
+:root {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  background: #0a0a0a;
+  color: #e8e8e8;
+  --accent: #6B5B95;
+  --accent-soft: #b9a8d8;
+  --panel: #111;
+  --border: #222;
+  --muted: #666;
+  --text: #e8e8e8;
+}
+
+body { margin: 0; padding: 24px; }
+
+.app { max-width: 1100px; margin: 0 auto; }
+
+h1 {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #888;
+  margin: 0 0 16px;
+}
+
+/* ── Drop zone ── */
+
+.dropzone {
+  display: block;
+  border: 1px dashed #333;
+  border-radius: 4px;
+  padding: 64px 24px;
+  text-align: center;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.dropzone.over { border-color: var(--accent); color: var(--accent-soft); }
+.dropzone .hint { color: #555; font-size: 11px; line-height: 2; }
+
+.demo-cta {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.demo-cta .hint { color: #555; font-size: 11px; }
+
+/* ── Memory badge ── */
+
+.memory-badge {
+  background: rgba(107, 91, 149, 0.12);
+  border: 1px solid rgba(107, 91, 149, 0.3);
+  color: var(--accent-soft);
+  padding: 8px 12px;
+  border-radius: 3px;
+  font-size: 11px;
+  margin-bottom: 12px;
+}
+
+/* ── Meta line ── */
+
+.meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 4px 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.meta .link {
+  background: none;
+  border: 1px solid #333;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 2px;
+  margin-left: auto;
+  cursor: pointer;
+}
+.meta .link:hover { color: var(--text); border-color: #555; }
+
+/* ── Mixer ── */
+
+.mixer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--panel);
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.stem-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 160px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 4px;
+  border-radius: 3px;
+}
+.stem-row.solo { background: rgba(107, 91, 149, 0.06); }
+.stem-row.muted .stem-name { color: #444; }
+
+.stem-name {
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stem-canvas-wrap { position: relative; height: 40px; background: #0e0e0e; border-radius: 2px; overflow: hidden; }
+.stem-canvas-wrap canvas { display: block; width: 100%; height: 40px; }
+.playhead {
+  position: absolute; top: 0; width: 1px; height: 100%;
+  background: #fff; pointer-events: none;
+}
+.beat-mark {
+  position: absolute; top: 0; width: 1px; height: 100%;
+  background: rgba(255, 255, 255, 0.1); pointer-events: none;
+}
+
+.stem-controls { display: flex; align-items: center; gap: 6px; }
+.stem-controls input[type="range"] { flex: 1; min-width: 80px; }
+
+button.mini {
+  background: #1a1a1a;
+  color: var(--muted);
+  border: 1px solid #2a2a2a;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  width: 22px; height: 22px;
+  border-radius: 2px;
+  padding: 0;
+  cursor: pointer;
+}
+button.mini.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+/* ── Transport ── */
+
+.controls { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
+button {
+  background: var(--accent);
+  color: white;
+  border: 0;
+  padding: 8px 16px;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button:disabled { background: #333; color: #666; cursor: not-allowed; }
+.time { color: var(--muted); font-size: 11px; margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* ── FX ── */
+
+.fx {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.fx label { display: flex; align-items: center; gap: 8px; }
+.fx input[type="range"] { width: 140px; }
+.fx .val { color: var(--accent-soft); font-variant-numeric: tabular-nums; min-width: 28px; }
