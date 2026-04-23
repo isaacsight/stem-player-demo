@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AudioEngine, type Stem } from './audio'
 import { detectBeats, estimateTempo } from './beats'
 import { buildMidiFile, downloadBlob } from './midi'
 import { fileKey, stemSetKey, load, save, type SessionState } from './persist'
 import { generateDemoStems } from './demo-stems'
-import { basicMeta, richFeatures } from './analysis'
-import { requestMixSuggestion, requestAutoName, type MixSuggestion, type MixAction } from './api-client'
+import { rmsDb, richFeatures } from './analysis'
+import { requestAutoName } from './api-client'
+import AgentChat from './AgentChat'
+import type { AgentContext } from './agent-tools'
 
 type StemUI = {
   name: string
@@ -32,9 +34,8 @@ export default function App() {
   const [reduction, setReduction] = useState(4)
   const [savedKey, setSavedKey] = useState<string>('')
   const [restoredFromMemory, setRestoredFromMemory] = useState(false)
-  const [aiBusy, setAiBusy] = useState<'mix' | 'name' | null>(null)
+  const [aiBusy, setAiBusy] = useState<'name' | null>(null)
   const [aiError, setAiError] = useState<string>('')
-  const [mixSuggestion, setMixSuggestion] = useState<MixSuggestion | null>(null)
 
   const engineRef = useRef<AudioEngine | null>(null)
   const rafRef = useRef<number>(0)
@@ -243,45 +244,54 @@ export default function App() {
     if (crushOn) getEngine().updateCrusherParams(bits, reduction)
   }, [bits, reduction, crushOn, getEngine])
 
-  // ── AI: mix suggestion ──
+  // ── AI agent context (live snapshot of the session) ──
+  // Note: precomputed RMS per stem is cached via basicMeta() once at load time.
+  // Recomputing per render would be wasteful for the agent snapshot.
 
-  const askForMixSuggestion = useCallback(async () => {
-    if (stems.length === 0) return
-    setAiBusy('mix')
-    setAiError('')
-    setMixSuggestion(null)
-    try {
-      const result = await requestMixSuggestion({
-        stems: stems.map(s => basicMeta(s.name, s.buffer)),
-        tempo,
-        beatCount: beats.length,
-        totalDuration: duration,
-      })
-      setMixSuggestion(result)
-    } catch (err) {
-      setAiError(err instanceof Error ? err.message : 'mix request failed')
-    } finally {
-      setAiBusy(null)
+  const stemRms = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const s of stems) map.set(s.name, rmsDb(s.buffer))
+    return map
+  }, [stems])
+
+  const agentCtxFactory = useCallback((): AgentContext | null => {
+    const engine = engineRef.current
+    if (!engine || stems.length === 0) return null
+    return {
+      engine,
+      stems: stems.map(s => ({
+        name: s.name,
+        volume: s.volume,
+        muted: s.muted,
+        solo: s.solo,
+        rmsDb: stemRms.get(s.name) ?? 0,
+      })),
+      setStems: (mutator) => setStems(prev => {
+        const agentView = prev.map(s => ({
+          name: s.name,
+          volume: s.volume,
+          muted: s.muted,
+          solo: s.solo,
+          rmsDb: stemRms.get(s.name) ?? 0,
+        }))
+        const mutated = mutator(agentView)
+        return prev.map(stemUI => {
+          const m = mutated.find(x => x.name === stemUI.name)
+          if (!m) return stemUI
+          return { ...stemUI, volume: m.volume, muted: m.muted, solo: m.solo }
+        })
+      }),
+      tempo,
+      beats,
+      duration,
+      crusher: { on: crushOn, bits, reduction },
+      setCrusher: (next) => {
+        setCrushOn(next.on)
+        setBits(next.bits)
+        setReduction(next.reduction)
+      },
     }
-  }, [stems, tempo, beats.length, duration])
-
-  const applyMixActions = useCallback((actions: MixAction[]) => {
-    setStems(prev => {
-      const next = prev.map(s => ({ ...s }))
-      for (const action of actions) {
-        const stem = next.find(s => s.name === action.stem)
-        if (!stem) continue
-        if (action.type === 'mute' && typeof action.value === 'boolean') stem.muted = action.value
-        if (action.type === 'solo' && typeof action.value === 'boolean') stem.solo = action.value
-        if (action.type === 'volume' && typeof action.value === 'number') stem.volume = action.value
-      }
-      const engine = getEngine()
-      const stateMap: Record<string, { volume: number; muted: boolean; solo: boolean }> = {}
-      next.forEach(s => { stateMap[s.name] = { volume: s.volume, muted: s.muted, solo: s.solo } })
-      engine.applySoloLogic(stateMap)
-      return next
-    })
-  }, [getEngine])
+  }, [stems, stemRms, tempo, beats, duration, crushOn, bits, reduction])
 
   // ── AI: auto-name stems ──
 
@@ -410,56 +420,17 @@ export default function App() {
         <span className="time">{position.toFixed(2)} / {duration.toFixed(2)} s</span>
       </div>
 
-      <div className="ai-panel">
-        <div className="ai-buttons">
-          <button
-            className="ai-btn"
-            onClick={askForMixSuggestion}
-            disabled={aiBusy !== null}
-          >
-            {aiBusy === 'mix' ? 'Thinking…' : '✨ Suggest a mix'}
-          </button>
-          <button
-            className="ai-btn secondary"
-            onClick={askForAutoName}
-            disabled={aiBusy !== null}
-          >
-            {aiBusy === 'name' ? 'Listening…' : 'Auto-identify stems'}
-          </button>
-          {aiError && <span className="ai-err">⚠ {aiError}</span>}
-        </div>
-        {mixSuggestion && (
-          <div className="ai-result">
-            <div className="ai-section">
-              <div className="ai-label">read</div>
-              <div className="ai-text">{mixSuggestion.description}</div>
-            </div>
-            <div className="ai-section">
-              <div className="ai-label">try</div>
-              <div className="ai-text accent">{mixSuggestion.suggestion}</div>
-            </div>
-            {mixSuggestion.actions.length > 0 && (
-              <div className="ai-section">
-                <div className="ai-label">actions</div>
-                <div className="ai-actions">
-                  {mixSuggestion.actions.map((a, i) => (
-                    <span key={i} className="ai-pill">
-                      {a.type} <strong>{a.stem}</strong>
-                      {typeof a.value === 'boolean' ? (a.value ? ' on' : ' off') : null}
-                      {typeof a.value === 'number' ? ` → ${(a.value * 100).toFixed(0)}%` : null}
-                    </span>
-                  ))}
-                </div>
-                <button
-                  className="ai-apply"
-                  onClick={() => applyMixActions(mixSuggestion.actions)}
-                >
-                  Apply ↻
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+      <AgentChat ctxFactory={agentCtxFactory} />
+
+      <div className="autoname-row">
+        <button
+          className="ai-btn secondary"
+          onClick={askForAutoName}
+          disabled={aiBusy !== null}
+        >
+          {aiBusy === 'name' ? 'Listening…' : 'Auto-identify stems'}
+        </button>
+        {aiError && <span className="ai-err">⚠ {aiError}</span>}
       </div>
 
       <div className="fx">
