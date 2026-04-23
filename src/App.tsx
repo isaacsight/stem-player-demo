@@ -4,6 +4,8 @@ import { detectBeats, estimateTempo } from './beats'
 import { buildMidiFile, downloadBlob } from './midi'
 import { fileKey, stemSetKey, load, save, type SessionState } from './persist'
 import { generateDemoStems } from './demo-stems'
+import { basicMeta, richFeatures } from './analysis'
+import { requestMixSuggestion, requestAutoName, type MixSuggestion, type MixAction } from './api-client'
 
 type StemUI = {
   name: string
@@ -11,6 +13,8 @@ type StemUI = {
   muted: boolean
   volume: number
   solo: boolean
+  inferredType?: string
+  inferredConfidence?: number
 }
 
 const WAVE_HEIGHT = 160
@@ -28,6 +32,9 @@ export default function App() {
   const [reduction, setReduction] = useState(4)
   const [savedKey, setSavedKey] = useState<string>('')
   const [restoredFromMemory, setRestoredFromMemory] = useState(false)
+  const [aiBusy, setAiBusy] = useState<'mix' | 'name' | null>(null)
+  const [aiError, setAiError] = useState<string>('')
+  const [mixSuggestion, setMixSuggestion] = useState<MixSuggestion | null>(null)
 
   const engineRef = useRef<AudioEngine | null>(null)
   const rafRef = useRef<number>(0)
@@ -236,6 +243,68 @@ export default function App() {
     if (crushOn) getEngine().updateCrusherParams(bits, reduction)
   }, [bits, reduction, crushOn, getEngine])
 
+  // ── AI: mix suggestion ──
+
+  const askForMixSuggestion = useCallback(async () => {
+    if (stems.length === 0) return
+    setAiBusy('mix')
+    setAiError('')
+    setMixSuggestion(null)
+    try {
+      const result = await requestMixSuggestion({
+        stems: stems.map(s => basicMeta(s.name, s.buffer)),
+        tempo,
+        beatCount: beats.length,
+        totalDuration: duration,
+      })
+      setMixSuggestion(result)
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'mix request failed')
+    } finally {
+      setAiBusy(null)
+    }
+  }, [stems, tempo, beats.length, duration])
+
+  const applyMixActions = useCallback((actions: MixAction[]) => {
+    setStems(prev => {
+      const next = prev.map(s => ({ ...s }))
+      for (const action of actions) {
+        const stem = next.find(s => s.name === action.stem)
+        if (!stem) continue
+        if (action.type === 'mute' && typeof action.value === 'boolean') stem.muted = action.value
+        if (action.type === 'solo' && typeof action.value === 'boolean') stem.solo = action.value
+        if (action.type === 'volume' && typeof action.value === 'number') stem.volume = action.value
+      }
+      const engine = getEngine()
+      const stateMap: Record<string, { volume: number; muted: boolean; solo: boolean }> = {}
+      next.forEach(s => { stateMap[s.name] = { volume: s.volume, muted: s.muted, solo: s.solo } })
+      engine.applySoloLogic(stateMap)
+      return next
+    })
+  }, [getEngine])
+
+  // ── AI: auto-name stems ──
+
+  const askForAutoName = useCallback(async () => {
+    if (stems.length === 0) return
+    setAiBusy('name')
+    setAiError('')
+    try {
+      const features = stems.map(s => richFeatures(s.name, s.buffer))
+      const inferences = await requestAutoName(features)
+      // Tag each stem with its inferred type — engine keys stay original
+      setStems(prev => prev.map(s => {
+        const inf = inferences.find(i => i.original === s.name)
+        if (!inf) return s
+        return { ...s, inferredType: inf.inferredType, inferredConfidence: inf.confidence }
+      }))
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'auto-name request failed')
+    } finally {
+      setAiBusy(null)
+    }
+  }, [stems])
+
   // ── Persistence: save on every meaningful change ──
 
   useEffect(() => {
@@ -341,6 +410,58 @@ export default function App() {
         <span className="time">{position.toFixed(2)} / {duration.toFixed(2)} s</span>
       </div>
 
+      <div className="ai-panel">
+        <div className="ai-buttons">
+          <button
+            className="ai-btn"
+            onClick={askForMixSuggestion}
+            disabled={aiBusy !== null}
+          >
+            {aiBusy === 'mix' ? 'Thinking…' : '✨ Suggest a mix'}
+          </button>
+          <button
+            className="ai-btn secondary"
+            onClick={askForAutoName}
+            disabled={aiBusy !== null}
+          >
+            {aiBusy === 'name' ? 'Listening…' : 'Auto-identify stems'}
+          </button>
+          {aiError && <span className="ai-err">⚠ {aiError}</span>}
+        </div>
+        {mixSuggestion && (
+          <div className="ai-result">
+            <div className="ai-section">
+              <div className="ai-label">read</div>
+              <div className="ai-text">{mixSuggestion.description}</div>
+            </div>
+            <div className="ai-section">
+              <div className="ai-label">try</div>
+              <div className="ai-text accent">{mixSuggestion.suggestion}</div>
+            </div>
+            {mixSuggestion.actions.length > 0 && (
+              <div className="ai-section">
+                <div className="ai-label">actions</div>
+                <div className="ai-actions">
+                  {mixSuggestion.actions.map((a, i) => (
+                    <span key={i} className="ai-pill">
+                      {a.type} <strong>{a.stem}</strong>
+                      {typeof a.value === 'boolean' ? (a.value ? ' on' : ' off') : null}
+                      {typeof a.value === 'number' ? ` → ${(a.value * 100).toFixed(0)}%` : null}
+                    </span>
+                  ))}
+                </div>
+                <button
+                  className="ai-apply"
+                  onClick={() => applyMixActions(mixSuggestion.actions)}
+                >
+                  Apply ↻
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="fx">
         <label>
           <input type="checkbox" checked={crushOn} onChange={e => toggleCrusher(e.target.checked)} />
@@ -399,7 +520,14 @@ function StemRow({
 
   return (
     <div className={'stem-row' + (stem.solo ? ' solo' : '') + (stem.muted ? ' muted' : '')}>
-      <div className="stem-name">{stem.name}</div>
+      <div className="stem-name">
+        {stem.name}
+        {stem.inferredType && (
+          <span className="stem-inferred" title={`AI confidence: ${((stem.inferredConfidence ?? 0) * 100).toFixed(0)}%`}>
+            {stem.inferredType}
+          </span>
+        )}
+      </div>
       <div className="stem-canvas-wrap">
         <canvas ref={canvasRef} />
         <div className="playhead" style={{ left: `${playheadPct}%` }} />

@@ -22,7 +22,9 @@ export function detectBeats(buffer: AudioBuffer): number[] {
   }
 
   const windowFrames = Math.floor(sampleRate / frameSize) // ~1 s
-  const refractoryFrames = Math.floor((sampleRate * 0.15) / frameSize) // 150 ms
+  // Round UP so the refractory is at least 150ms — rounding down can let
+  // beats slip closer together than the documented minimum.
+  const refractoryFrames = Math.ceil((sampleRate * 0.15) / frameSize)
   const threshold = 1.6
   const beats: number[] = []
   let lastBeatFrame = -refractoryFrames

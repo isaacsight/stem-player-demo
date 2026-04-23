@@ -156,6 +156,108 @@ button {
 button:disabled { background: #333; color: #666; cursor: not-allowed; }
 .time { color: var(--muted); font-size: 11px; margin-left: auto; font-variant-numeric: tabular-nums; }
 
+/* ── Inferred-type badge ── */
+
+.stem-inferred {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  background: rgba(107, 91, 149, 0.15);
+  color: var(--accent-soft);
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+}
+
+/* ── AI panel ── */
+
+.ai-panel {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(107,91,149,0.06) 0%, var(--panel) 60%);
+  border: 1px solid rgba(107, 91, 149, 0.2);
+  border-radius: 4px;
+}
+
+.ai-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+button.ai-btn {
+  background: var(--accent);
+  color: white;
+  font-size: 12px;
+  padding: 8px 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 0;
+}
+button.ai-btn.secondary {
+  background: transparent;
+  border: 1px solid rgba(107, 91, 149, 0.4);
+  color: var(--accent-soft);
+}
+button.ai-btn:disabled {
+  background: #2a2a2a;
+  color: #666;
+  cursor: not-allowed;
+  border-color: #333;
+}
+
+.ai-err { color: #d97a7a; font-size: 11px; }
+
+.ai-result { margin-top: 14px; }
+
+.ai-section { margin-bottom: 12px; }
+.ai-section:last-child { margin-bottom: 0; }
+
+.ai-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.ai-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.ai-text.accent { color: var(--accent-soft); }
+
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.ai-pill {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  padding: 3px 8px;
+  border-radius: 2px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.ai-pill strong { color: var(--accent-soft); font-weight: 500; }
+
+button.ai-apply {
+  background: rgba(107, 91, 149, 0.2);
+  color: var(--accent-soft);
+  border: 1px solid var(--accent);
+  padding: 4px 12px;
+  font-size: 11px;
+  border-radius: 2px;
+}
+button.ai-apply:hover { background: var(--accent); color: white; }
+
 /* ── FX ── */
 
 .fx {
