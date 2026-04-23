@@ -255,7 +255,7 @@ export type AgentContext = {
   setLoop: (range: { startSec: number; endSec: number } | null) => void
   loop: { startSec: number; endSec: number } | null
   sections: Section[]
-  setSections: (sections: Section[]) => void
+  setSections: (mutator: (current: Section[]) => Section[]) => void
   rewindTransport: () => void
 }
 
@@ -410,12 +410,14 @@ export async function executeTool(
           startSec: Number(input.startSec),
           endSec: Number(input.endSec),
         }
-        ctx.setSections([...ctx.sections, section])
+        // Functional updater — sequential calls in the same turn must
+        // each see the previous one's result, not a stale snapshot.
+        ctx.setSections(prev => [...prev, section])
         return { success: true, output: `section "${section.name}" added (${section.startSec.toFixed(1)}s → ${section.endSec.toFixed(1)}s)` }
       }
 
       case 'clear_sections':
-        ctx.setSections([])
+        ctx.setSections(() => [])
         return { success: true, output: 'sections cleared' }
 
       case 'set_stem_filter': {

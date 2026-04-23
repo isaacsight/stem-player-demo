@@ -7,6 +7,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { runAgent, type AgentMessage, type ToolCallTrace } from './agent-engine'
 import type { AgentContext } from './agent-tools'
 
@@ -17,7 +19,13 @@ type DisplayMessage = {
   pending?: boolean
 }
 
-export default function AgentChat({ ctxFactory }: { ctxFactory: () => AgentContext | null }) {
+export default function AgentChat({
+  ctxFactory,
+  onArrangementCompleted,
+}: {
+  ctxFactory: () => AgentContext | null
+  onArrangementCompleted?: () => void
+}) {
   const [conversation, setConversation] = useState<AgentMessage[]>([])
   const [display, setDisplay] = useState<DisplayMessage[]>([])
   const [input, setInput] = useState('')
@@ -51,6 +59,8 @@ export default function AgentChat({ ctxFactory }: { ctxFactory: () => AgentConte
     const ac = new AbortController()
     abortRef.current = ac
 
+    let scheduledArrangement = false
+
     try {
       const updated = await runAgent({
         messages: [...conversation, userMsg],
@@ -79,6 +89,9 @@ export default function AgentChat({ ctxFactory }: { ctxFactory: () => AgentConte
             })
           },
           onToolResult: (call) => {
+            if (call.name === 'schedule_arrangement' && call.result?.success) {
+              scheduledArrangement = true
+            }
             setDisplay(prev => {
               const next = [...prev]
               const last = next[next.length - 1]
@@ -105,6 +118,10 @@ export default function AgentChat({ ctxFactory }: { ctxFactory: () => AgentConte
         },
       })
       setConversation(updated)
+      if (scheduledArrangement && onArrangementCompleted) {
+        // brief delay so users see the agent's final message before audio kicks in
+        setTimeout(() => onArrangementCompleted(), 600)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'agent failed')
     } finally {
@@ -149,7 +166,15 @@ export default function AgentChat({ ctxFactory }: { ctxFactory: () => AgentConte
         {display.map((msg, i) => (
           <div key={i} className={`agent-msg ${msg.role}`}>
             <div className="agent-msg-role">{msg.role === 'user' ? 'you' : 'agent'}</div>
-            {msg.text && <div className="agent-msg-text">{msg.text}</div>}
+            {msg.text && (
+              <div className="agent-msg-text">
+                {msg.role === 'assistant' ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
+                ) : (
+                  msg.text
+                )}
+              </div>
+            )}
             {msg.toolCalls.length > 0 && (
               <div className="agent-tools">
                 {msg.toolCalls.map(call => (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AudioEngine, type Stem } from './audio'
 import { detectBeats, estimateTempo } from './beats'
 import { buildMidiFile, downloadBlob } from './midi'
@@ -388,7 +388,7 @@ export default function App() {
       },
       loop,
       sections,
-      setSections,
+      setSections: (mutator) => setSections(prev => mutator(prev)),
       rewindTransport: () => {
         engine.rewind()
         cancelAnimationFrame(rafRef.current)
@@ -588,7 +588,14 @@ export default function App() {
         <span className="time">{position.toFixed(2)} / {duration.toFixed(2)} s</span>
       </div>
 
-      <AgentChat ctxFactory={agentCtxFactory} />
+      <AgentChat
+        ctxFactory={agentCtxFactory}
+        onArrangementCompleted={() => {
+          reset()
+          // Slight delay to ensure reset state has flushed before play
+          setTimeout(() => play(), 100)
+        }}
+      />
 
       <div className="autoname-row">
         <button
@@ -707,14 +714,32 @@ function StemRow({
             style={{ left: `${(t / duration) * 100}%` }}
           />
         ))}
-        {stemEvents.map((e, i) => (
-          <div
-            key={`evt-${i}`}
-            className={`auto-event auto-${e.type}`}
-            style={{ left: `${(e.atSec / duration) * 100}%` }}
-            title={`${e.type} @ ${e.atSec.toFixed(2)}s${'value' in e ? ` → ${e.value}` : ''}`}
-          />
-        ))}
+        {/* Group events by atSec so overlapping dots stack vertically instead of occluding */}
+        {(() => {
+          const grouped = new Map<number, AutomationEvent[]>()
+          stemEvents.forEach(e => {
+            const arr = grouped.get(e.atSec) ?? []
+            arr.push(e)
+            grouped.set(e.atSec, arr)
+          })
+          const out: React.ReactElement[] = []
+          for (const [atSec, evts] of grouped) {
+            evts.forEach((e, idx) => {
+              out.push(
+                <div
+                  key={`${atSec}-${idx}-${e.type}`}
+                  className={`auto-event auto-${e.type}`}
+                  style={{
+                    left: `${(atSec / duration) * 100}%`,
+                    top: `calc(50% + ${(idx - (evts.length - 1) / 2) * 6}px)`,
+                  }}
+                  title={`${e.type} @ ${atSec.toFixed(2)}s${'value' in e ? ` → ${e.value}` : ''}`}
+                />,
+              )
+            })
+          }
+          return out
+        })()}
       </div>
       <div className="stem-controls">
         <button className={'mini' + (stem.muted ? ' active' : '')} onClick={() => onMute(!stem.muted)}>M</button>
