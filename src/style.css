@@ -385,8 +385,37 @@ button.ai-apply:hover { background: var(--accent); color: white; }
   font-size: 11px;
   line-height: 1.6;
 }
-.agent-hint ul { margin: 8px 0; padding-left: 18px; }
-.agent-hint li { margin-bottom: 2px; color: #888; }
+.agent-hint-text { margin-bottom: 8px; }
+.agent-hint-text.muted { color: #555; font-size: 10px; margin-top: 8px; }
+
+.agent-prompt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+.agent-prompt-chip {
+  background: rgba(107, 91, 149, 0.10);
+  border: 1px solid rgba(107, 91, 149, 0.3);
+  color: var(--accent-soft);
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+.agent-prompt-chip:hover:not(:disabled) {
+  background: rgba(107, 91, 149, 0.25);
+  border-color: var(--accent);
+  color: white;
+}
+.agent-prompt-chip:disabled {
+  background: #1a1a1a;
+  border-color: #2a2a2a;
+  color: #666;
+  cursor: not-allowed;
+}
 
 .agent-msg {
   display: flex;

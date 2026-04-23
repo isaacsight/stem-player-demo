@@ -12,6 +12,38 @@ import remarkGfm from 'remark-gfm'
 import { runAgent, type AgentMessage, type ToolCallTrace } from './agent-engine'
 import type { AgentContext } from './agent-tools'
 
+/**
+ * Curated demo prompts shown in the empty state. Each one exercises a
+ * different combination of agent capabilities — designed to show what
+ * the system can do without the user having to know what to ask.
+ */
+const DEMO_PROMPTS = [
+  {
+    label: '🎚️ Downtempo lo-fi arrangement',
+    prompt: 'Build me a downtempo lo-fi arrangement: solo keys for the first 4 seconds as intro, bring drums in at 4s with a lowpass filter at 1500Hz for vinyl warmth, full mix at 8s with subtle bitcrushing, breakdown at 14s with everything pulled back to 0.4. Add section labels.',
+  },
+  {
+    label: '🔥 Festival drop',
+    prompt: 'Make this a festival drop: build for 4 seconds with just drums + bass, then EVERYTHING IN at 4s with the lead pushed up to 1.0 and centered, drums loud and crispy. Add a "Drop" section label.',
+  },
+  {
+    label: '🌫️ Underwater dream',
+    prompt: 'Make everything sound underwater: lowpass filter at 600Hz on every stem, push reverb to 0.7 on lead and keys, pull volumes back, pan keys left and lead right. Subtle, dreamy.',
+  },
+  {
+    label: '🎙️ Vocals-only breakdown',
+    prompt: 'Schedule a 4-bar arrangement: full mix for the first 8s, then solo keys + lead for 4s as a breakdown, then full mix back. Add "Verse" "Breakdown" "Drop" labels.',
+  },
+  {
+    label: '📞 Telephone effect',
+    prompt: 'Make the lead sound like an old telephone: bandpass filter at 1500Hz Q=4, panned slightly right, with reverb send at 0.3.',
+  },
+  {
+    label: '🔁 Loop the chorus',
+    prompt: 'What is this and what should I do with it? Then pick the most energetic 2-second region and loop it.',
+  },
+]
+
 type DisplayMessage = {
   role: 'user' | 'assistant'
   text: string                  // accumulated text content for display
@@ -39,8 +71,8 @@ export default function AgentChat({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [display])
 
-  const send = useCallback(async () => {
-    const text = input.trim()
+  const send = useCallback(async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim()
     if (!text) return
     const ctx = ctxFactory()
     if (!ctx) {
@@ -154,13 +186,21 @@ export default function AgentChat({
       <div className="agent-scroll" ref={scrollRef}>
         {display.length === 0 && (
           <div className="agent-hint">
-            Ask the AI to mix this session. Examples:
-            <ul>
-              <li>"Make this sound like a downtempo lo-fi mix"</li>
-              <li>"Solo just the drums and bass for a breakdown"</li>
-              <li>"What is this and what should I do with it?"</li>
-              <li>"Push the lead, pull the keys back, add subtle bitcrushing"</li>
-            </ul>
+            <div className="agent-hint-text">Ask the AI to mix and arrange this session. Try one of these:</div>
+            <div className="agent-prompt-chips">
+              {DEMO_PROMPTS.map(p => (
+                <button
+                  key={p.label}
+                  className="agent-prompt-chip"
+                  onClick={() => send(p.prompt)}
+                  disabled={busy}
+                  title={p.prompt}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="agent-hint-text muted">…or type your own prompt below.</div>
           </div>
         )}
         {display.map((msg, i) => (
@@ -207,7 +247,7 @@ export default function AgentChat({
         {busy ? (
           <button onClick={cancel} className="agent-send cancel">Cancel</button>
         ) : (
-          <button onClick={send} className="agent-send" disabled={!input.trim()}>Send</button>
+          <button onClick={() => send()} className="agent-send" disabled={!input.trim()}>Send</button>
         )}
       </div>
     </div>
