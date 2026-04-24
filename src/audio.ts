@@ -93,6 +93,18 @@ export class AudioEngine {
     return this.ctx.decodeAudioData(ab)
   }
 
+  /**
+   * Resume the underlying AudioContext if suspended. Call this from any
+   * synchronous user-gesture handler (button click, key press) to keep the
+   * context alive across long async work — important when the agent loop
+   * runs for several seconds before triggering playback.
+   */
+  async resume(): Promise<void> {
+    if (this.ctx.state === 'suspended') {
+      try { await this.ctx.resume() } catch { /* policy may block */ }
+    }
+  }
+
   /** Replace all stems. Stops playback. */
   loadStems(stems: Stem[], initialState?: Record<string, { volume: number; muted: boolean; solo: boolean }>) {
     this.stop()
@@ -238,6 +250,12 @@ export class AudioEngine {
 
   async play(onEnded?: () => void) {
     if (this.playing || this.stems.length === 0) return
+    // Browsers suspend AudioContext until a user gesture; resume defensively.
+    // If the gesture chain has been lost (e.g. agent → setTimeout → play),
+    // resume() may reject — caller will see the rejection and can surface it.
+    if (this.ctx.state === 'suspended') {
+      try { await this.ctx.resume() } catch { /* policy may block; play will silently no-op */ }
+    }
     await this.workletReady // safe even if crusher unused
     this.lastOnEnded = onEnded
     const startAt = this.ctx.currentTime + START_LOOKAHEAD

@@ -79,6 +79,11 @@ export default function AgentChat({
       setError('Load a session first.')
       return
     }
+    // Resume the AudioContext while we still hold a fresh user gesture.
+    // The agent loop is async + long; without this, autoplay policy will
+    // silently block any post-agent playback (the chip click gesture is
+    // gone by the time the agent finishes 20s later).
+    void ctx.engine.resume()
     setInput('')
     setError('')
     setBusy(true)
