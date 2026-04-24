@@ -68,7 +68,12 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const getEngine = useCallback(() => {
-    if (!engineRef.current) engineRef.current = new AudioEngine()
+    if (!engineRef.current) {
+      engineRef.current = new AudioEngine()
+      // Expose on window for live debugging during the interview / dev.
+      // Safe to leave in production — no secrets, just the audio graph.
+      ;(window as unknown as { __engine: AudioEngine }).__engine = engineRef.current
+    }
     return engineRef.current
   }, [])
 
