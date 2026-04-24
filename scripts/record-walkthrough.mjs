@@ -46,10 +46,17 @@ await page.evaluate(() => {
 })
 await page.reload({ waitUntil: 'networkidle' })
 
-// 1. Load the procedural demo set
-console.log('loading demo set…')
-await page.click('button:has-text("Load procedural demo set")')
-await page.waitForSelector('.stem-row', { timeout: 10_000 })
+// 1. Wait for auto-load — manifest.json triggers stem decode on mount.
+//    If no manifest (404), we'd fall back to the procedural button.
+console.log('waiting for stems to auto-load…')
+try {
+  await page.waitForSelector('.stem-row', { timeout: 15_000 })
+  console.log('stems auto-loaded')
+} catch {
+  console.log('no auto-load — falling back to procedural button')
+  await page.click('button:has-text("Load procedural demo set")')
+  await page.waitForSelector('.stem-row', { timeout: 10_000 })
+}
 await page.waitForTimeout(2000) // let waveforms render
 
 // 2. Click the "Festival drop" chip
@@ -64,9 +71,17 @@ await page.waitForFunction(() => {
   return tools.some(t => t.textContent?.includes('schedule_arrangement'))
 }, { timeout: 60_000 })
 
-// Wait for auto-play to start (the play button changes to Pause)
-await page.waitForSelector('button:has-text("Pause")', { timeout: 10_000 })
-console.log('agent finished — playback started')
+// Wait for auto-play to start (the play button changes to Pause).
+// Headless Chrome can block autoplay even with our resume() fix, so
+// fall back to clicking Play manually if needed.
+try {
+  await page.waitForSelector('button:has-text("Pause")', { timeout: 8_000 })
+  console.log('agent finished — auto-play started')
+} catch {
+  console.log('auto-play didn\'t kick in — clicking Play manually')
+  await page.click('button:has-text("Play")')
+  await page.waitForSelector('button:has-text("Pause")', { timeout: 5_000 })
+}
 
 // Let the playhead run for a bit
 await page.waitForTimeout(8000)
