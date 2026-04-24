@@ -88,6 +88,11 @@ export class AudioEngine {
     return this.ctx.decodeAudioData(ab)
   }
 
+  /** Decode raw audio bytes (e.g., from fetch). */
+  async decodeArrayBuffer(ab: ArrayBuffer): Promise<AudioBuffer> {
+    return this.ctx.decodeAudioData(ab)
+  }
+
   /** Replace all stems. Stops playback. */
   loadStems(stems: Stem[], initialState?: Record<string, { volume: number; muted: boolean; solo: boolean }>) {
     this.stop()

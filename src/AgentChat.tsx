@@ -155,7 +155,15 @@ export default function AgentChat({
         setTimeout(() => onArrangementCompleted(), 600)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'agent failed')
+      // Convert raw errors (network, abort) into producer-friendly messages.
+      // HTTP errors from the engine are already friendly.
+      let msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('aborted') || msg.includes('AbortError')) {
+        msg = 'Cancelled.'
+      } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        msg = 'Lost connection — check your internet and try again.'
+      }
+      setError(msg)
     } finally {
       setBusy(false)
       abortRef.current = null

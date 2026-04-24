@@ -60,13 +60,14 @@ export async function runAgent(input: AgentRunInput): Promise<AgentMessage[]> {
       signal,
     })
     if (!res.ok) {
-      const err = await res.text().catch(() => `HTTP ${res.status}`)
-      callbacks?.onError?.(err)
-      throw new Error(err)
+      const friendly = friendlyHttpError(res.status, await res.text().catch(() => ''))
+      callbacks?.onError?.(friendly)
+      throw new Error(friendly)
     }
     if (!res.body) {
-      callbacks?.onError?.('no response body')
-      throw new Error('no response body')
+      const msg = 'No response from the AI service. Try again.'
+      callbacks?.onError?.(msg)
+      throw new Error(msg)
     }
 
     const { assistantMessage, stopReason } = await readStream(res.body, callbacks)
@@ -156,4 +157,31 @@ async function readStream(
 
   if (!assistantMessage) throw new Error('stream ended without message_complete')
   return { assistantMessage, stopReason }
+}
+
+/**
+ * Map HTTP status + raw error text to a producer-friendly message.
+ * Goal: tell the user what to do next, not what broke at the protocol layer.
+ */
+function friendlyHttpError(status: number, rawBody: string): string {
+  if (status === 401 || status === 403) {
+    return 'Mix engineer\'s API key isn\'t configured on the server.'
+  }
+  if (status === 429) {
+    return 'Rate limited — wait ~30 seconds and try again.'
+  }
+  if (status === 500 || status === 502 || status === 503) {
+    // Anthropic errors come through as 502 with a JSON body
+    if (rawBody.includes('overloaded')) {
+      return 'AI service is overloaded — try again in a moment.'
+    }
+    if (rawBody.includes('rate_limit')) {
+      return 'Rate limited — wait ~30 seconds and try again.'
+    }
+    return 'Mix engineer hit a snag — try a different prompt or refresh.'
+  }
+  if (status === 504 || status === 408) {
+    return 'Mix engineer timed out — try again or simplify the prompt.'
+  }
+  return `Unexpected error (${status}). Try again or refresh.`
 }

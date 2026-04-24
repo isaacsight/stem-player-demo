@@ -182,6 +182,57 @@ export default function App() {
     await loadGeneratedStems(stemList, 'demo-procedural-v1')
   }, [loadGeneratedStems])
 
+  /**
+   * Try to auto-load real stems from /demo-stems/manifest.json.
+   * If the manifest exists and points to fetchable audio files, decode
+   * them and load into the engine — bypassing the dropzone entirely.
+   * If 404 / parse error / decode error, falls through to the normal
+   * empty state. Never throws.
+   */
+  const tryAutoLoadFromPublic = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/demo-stems/manifest.json', { cache: 'no-cache' })
+      if (!res.ok) return false
+      const manifest = await res.json() as {
+        title?: string
+        stems?: Array<{ name: string; file: string }>
+      }
+      if (!Array.isArray(manifest.stems) || manifest.stems.length === 0) return false
+
+      const engine = getEngine()
+      const decoded: Stem[] = []
+      for (const entry of manifest.stems) {
+        const audioRes = await fetch(`/demo-stems/${entry.file}`)
+        if (!audioRes.ok) {
+          console.warn(`auto-load: missing ${entry.file}`)
+          continue
+        }
+        const arrayBuffer = await audioRes.arrayBuffer()
+        const buffer = await engine.decodeArrayBuffer(arrayBuffer)
+        decoded.push({ name: entry.name, buffer })
+      }
+      if (decoded.length === 0) return false
+
+      const key = `demo-public-${(manifest.stems.map(s => s.file).join('|'))}`
+      await loadGeneratedStems(decoded, key)
+      return true
+    } catch (err) {
+      console.warn('auto-load failed:', err)
+      return false
+    }
+  }, [getEngine, loadGeneratedStems])
+
+  // On mount, try auto-loading public demo stems
+  useEffect(() => {
+    let cancelled = false
+    tryAutoLoadFromPublic().then(() => {
+      if (cancelled) return
+      // If false, the empty-state UI handles the user picking a file
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setOver(false)
