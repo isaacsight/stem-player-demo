@@ -1,0 +1,12 @@
+{
+  "title": "Suno track — typebe (no sax)",
+  "stems": [
+    { "name": "drums", "file": "drums.mp3" },
+    { "name": "bass", "file": "bass.mp3" },
+    { "name": "keys", "file": "keys.mp3" },
+    { "name": "guitar", "file": "guitar.mp3" },
+    { "name": "synth", "file": "synth.mp3" },
+    { "name": "percussion", "file": "percussion.mp3" },
+    { "name": "fx", "file": "fx.mp3" }
+  ]
+}
