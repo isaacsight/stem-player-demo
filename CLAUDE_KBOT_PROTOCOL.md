@@ -138,6 +138,29 @@ Each should complete in under 30 seconds with clean, readable output.
 
 ---
 
+## ⚠️ kbot reliability — verified Thursday night
+
+The `suno-interview` skill was registered in kbot at `~/.kbot/skills/imported/suno-interview/`. It includes the architecture, talking points, vocabulary, tradeoffs — and shows up in `kbot skills list`. ✅
+
+**But empirical testing showed kbot is flakier than ideal for live Q&A:**
+
+- kbot may go off and read files in your OTHER projects when asked about Stem Player, then produce wrong details (e.g., it claimed sonnet-4-5 + 20 tools when stem-player is sonnet-4-6 + 18 tools).
+- Self-correction loops can spiral when kbot disagrees with its own error-correction system.
+- Cost ceiling can hit at $1 per session and stop the loop mid-answer.
+
+**Mitigation: use `--lite` mode for kbot live demos** — skips heavy file-reading tools and stays in skill-context mode:
+
+```bash
+kbot --pipe --model sonnet --lite "your question"
+```
+
+**Recommendation: kbot is the brand-showcase tool, not the live-Q&A tool.**
+- Use kbot ON-SCREEN when the moment calls for "look at this agent I built"
+- Use Claude (this Claude Code session, or claude.ai) for actual answers you'll deliver
+- Don't fight kbot in real-time if it misbehaves — switch silently to Claude, narrate it: *"Going with the Claude answer for this one."*
+
+---
+
 ## Live screen layout (Friday)
 
 You should have these visible (ideally on a second monitor):
